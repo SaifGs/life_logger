@@ -1,62 +1,98 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#0a0a0a" />
-  <title>life.log</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="css/style.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0D1117">
+<title>life.log</title>
+<link rel="icon" href="data:,">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-  <!-- Setup Screen -->
-  <div id="screen-setup" class="screen hidden">
-    <div class="setup-inner">
-      <h1>life.log</h1>
-      <p class="tagline">Sprich. Alles wird gespeichert.</p>
+<!-- Setup Overlay -->
+<div class="overlay" id="overlay">
+  <div class="setup-box">
+    <div class="setup-logo">
+      <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+    </div>
+    <h2>life.log</h2>
+    <p>Verbinde deine Keys um mit dem Aufnehmen zu beginnen.</p>
 
-      <div class="setup-group">
-        <span class="group-label">OpenAI</span>
-        <input type="password" id="openai-key" placeholder="sk-..." autocomplete="off" spellcheck="false" />
-      </div>
+    <span class="label">OpenAI API Key</span>
+    <input type="password" id="openai-key" placeholder="sk-..." autocomplete="off" spellcheck="false" />
 
-      <div class="setup-group">
-        <span class="group-label">GitHub</span>
-        <input type="text"     id="gh-user"  placeholder="username"          autocomplete="off" spellcheck="false" />
-        <input type="text"     id="gh-repo"  placeholder="repo-name (privat)" autocomplete="off" spellcheck="false" />
-        <input type="password" id="gh-token" placeholder="ghp_..."            autocomplete="off" spellcheck="false" />
-      </div>
+    <span class="label">GitHub Username</span>
+    <input type="text" id="gh-user" placeholder="username" autocomplete="off" spellcheck="false" />
 
-      <button id="btn-start">Loslegen</button>
+    <span class="label">GitHub Repo (privat)</span>
+    <input type="text" id="gh-repo" placeholder="repo-name" autocomplete="off" spellcheck="false" />
+
+    <span class="label">GitHub Token</span>
+    <input type="password" id="gh-token" placeholder="ghp_..." autocomplete="off" spellcheck="false" />
+
+    <button class="save-btn" id="btn-start">Loslegen →</button>
+    <div class="err" id="setup-err"></div>
+    <div class="hint">Daten werden nur lokal auf diesem Gerät gespeichert.</div>
+  </div>
+</div>
+
+<!-- App -->
+<div class="app">
+
+  <div class="header">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+    </div>
+    <div>
+      <div class="app-title">life.log</div>
+      <div class="app-sub">Voice Journal</div>
+    </div>
+    <div class="header-right">
+      <span class="entry-count-badge" id="entry-count"></span>
+      <button class="btn-settings" id="btn-open-settings" title="Einstellungen">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
     </div>
   </div>
 
-  <!-- Main Screen -->
-  <div id="screen-main" class="screen hidden">
-
-    <header>
-      <span class="logo" id="btn-to-setup" title="Einstellungen">life.log</span>
-    </header>
-
-    <section id="record-section">
-      <button id="btn-record" aria-label="Aufnahme starten">
-        <span class="mic-icon">🎙</span>
-        <span class="pulse-ring"></span>
+  <div class="rec-area">
+    <div class="btn-wrap">
+      <div class="ripple-ring"></div>
+      <div class="ripple-ring"></div>
+      <div class="ripple-ring"></div>
+      <button class="rec-btn" id="btn-record" data-state="idle">
+        <svg class="icon-mic" viewBox="0 0 24 24">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <svg class="icon-stop" viewBox="0 0 24 24">
+          <rect x="6" y="6" width="12" height="12" rx="2.5" fill="white"/>
+        </svg>
       </button>
-      <p id="record-status">Tippen zum Aufnehmen</p>
-      <div id="live-transcript"></div>
-    </section>
-
-    <section id="log-section">
-      <div id="log-entries"></div>
-    </section>
-
-    <div id="sync-status"></div>
+    </div>
+    <div class="status" id="record-status">Tippen zum Aufnehmen</div>
+    <div class="timer" id="timer"></div>
+    <div class="transcript" id="live-transcript"></div>
   </div>
 
-  <script src="js/github.js"></script>
-  <script src="js/whisper.js"></script>
-  <script src="js/app.js"></script>
+  <div class="log-section">
+    <div class="log-header">Einträge</div>
+    <div class="log-list" id="log-entries"></div>
+  </div>
+
+</div>
+
+<div id="sync-status"></div>
+
+<script src="js/github.js"></script>
+<script src="js/whisper.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

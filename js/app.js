@@ -1,36 +1,88 @@
 // Main App
 const App = (() => {
 
-  const LOG = (...args) => console.log('[App]', ...args);
+  const LOG = (...args) => console.log('%c[App]', 'color:#A78BFA;font-weight:600', ...args);
   const ERR = (...args) => console.error('[App]', ...args);
 
   // --- DOM ---
-  const screenSetup    = document.getElementById('screen-setup');
-  const screenMain     = document.getElementById('screen-main');
+  const overlay        = document.getElementById('overlay');
   const btnStart       = document.getElementById('btn-start');
-  const btnToSetup     = document.getElementById('btn-to-setup');
+  const btnOpenSettings= document.getElementById('btn-open-settings');
+  const setupErr       = document.getElementById('setup-err');
   const inOpenAI       = document.getElementById('openai-key');
   const inUser         = document.getElementById('gh-user');
   const inRepo         = document.getElementById('gh-repo');
   const inToken        = document.getElementById('gh-token');
   const btnRecord      = document.getElementById('btn-record');
   const recordStatus   = document.getElementById('record-status');
+  const timerEl        = document.getElementById('timer');
   const liveTranscript = document.getElementById('live-transcript');
   const logEntries     = document.getElementById('log-entries');
+  const entryCount     = document.getElementById('entry-count');
   const syncStatus     = document.getElementById('sync-status');
 
   LOG('DOM resolved');
 
-  let mediaRecorder = null;
-  let audioChunks   = [];
-  let isRecording   = false;
-  let syncTimer     = null;
+  let mediaRecorder  = null;
+  let audioChunks    = [];
+  let isRecording    = false;
+  let syncTimer      = null;
+  let timerInterval  = null;
+  let entryCountVal  = 0;
 
-  // --- Screens ---
-  function showScreen(id) {
-    LOG('showScreen:', id);
-    [screenSetup, screenMain].forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
+  // --- Timer ---
+  function startTimer() {
+    const start = Date.now();
+    timerEl.textContent = '00:00';
+    timerInterval = setInterval(() => {
+      const sec = Math.floor((Date.now() - start) / 1000);
+      const m   = String(Math.floor(sec / 60)).padStart(2, '0');
+      const s   = String(sec % 60).padStart(2, '0');
+      timerEl.textContent = `${m}:${s}`;
+    }, 500);
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    timerEl.textContent = '';
+  }
+
+  // --- State ---
+  function setState(state) {
+    LOG('state →', state);
+    btnRecord.dataset.state = state;
+    const rings = document.querySelectorAll('.ripple-ring');
+    if (state === 'idle') {
+      recordStatus.textContent = 'Tippen zum Aufnehmen';
+      rings.forEach(r => r.classList.remove('show'));
+      stopTimer();
+    } else if (state === 'recording') {
+      recordStatus.textContent = 'Aufnahme läuft — nochmal tippen zum Stoppen';
+      rings.forEach(r => r.classList.add('show'));
+      startTimer();
+    } else if (state === 'transcribing') {
+      recordStatus.textContent = 'Transkribiere...';
+      rings.forEach(r => r.classList.remove('show'));
+      stopTimer();
+    }
+  }
+
+  // --- Overlay ---
+  function showOverlay() {
+    const c = GitHub.config();
+    inOpenAI.value = Whisper.getKey();
+    inUser.value   = c.user  || '';
+    inRepo.value   = c.repo  || '';
+    inToken.value  = c.token || '';
+    setupErr.textContent = '';
+    overlay.classList.remove('hidden');
+    LOG('overlay shown');
+  }
+
+  function hideOverlay() {
+    overlay.classList.add('hidden');
+    LOG('overlay hidden');
   }
 
   // --- Log Format (Python-Logger-Stil): 2026-04-14 10:23:45 - text ---
@@ -52,7 +104,6 @@ const App = (() => {
   async function startRecording() {
     LOG('startRecording');
     liveTranscript.textContent = '';
-    liveTranscript.classList.remove('has-text');
 
     let stream;
     try {
@@ -70,7 +121,6 @@ const App = (() => {
 
     mediaRecorder.ondataavailable = e => {
       if (e.data.size > 0) audioChunks.push(e.data);
-      LOG('chunk:', e.data.size);
     };
 
     mediaRecorder.onstop = async () => {
@@ -81,8 +131,7 @@ const App = (() => {
     };
 
     isRecording = true;
-    btnRecord.classList.add('recording');
-    recordStatus.textContent = 'Aufnahme läuft...';
+    setState('recording');
     mediaRecorder.start();
   }
 
@@ -90,8 +139,7 @@ const App = (() => {
     LOG('stopRecording, state:', mediaRecorder?.state);
     if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
     isRecording = false;
-    btnRecord.classList.remove('recording');
-    recordStatus.textContent = 'Verarbeitung...';
+    setState('transcribing');
     btnRecord.disabled = true;
     mediaRecorder.stop();
   }
@@ -101,7 +149,7 @@ const App = (() => {
     if (!Whisper.isConfigured()) {
       ERR('Whisper not configured');
       showSync('OpenAI Key fehlt', 'error');
-      recordStatus.textContent = 'Tippen zum Aufnehmen';
+      setState('idle');
       btnRecord.disabled = false;
       return;
     }
@@ -109,19 +157,15 @@ const App = (() => {
       showSync('Transkribiere...', '');
       const text = await Whisper.transcribe(blob);
       LOG('transcript:', text);
-
       if (text) {
         liveTranscript.textContent = text;
-        liveTranscript.classList.add('has-text');
         await saveEntry(text);
-      } else {
-        LOG('empty transcript');
       }
     } catch (err) {
       ERR('processAudio error:', err);
       showSync('Fehler: ' + err.message, 'error');
     } finally {
-      recordStatus.textContent = 'Tippen zum Aufnehmen';
+      setState('idle');
       btnRecord.disabled = false;
     }
   }
@@ -129,8 +173,11 @@ const App = (() => {
   // --- Save ---
   async function saveEntry(text) {
     const line = formatLine(text);
-    LOG('saveEntry line:', line);
-    renderLine(line, true);
+    LOG('saveEntry:', line);
+    prependCard(line);
+    entryCountVal++;
+    entryCount.textContent = entryCountVal;
+
     if (!GitHub.isConfigured()) {
       ERR('GitHub not configured');
       showSync('GitHub nicht konfiguriert', 'error');
@@ -148,15 +195,13 @@ const App = (() => {
   }
 
   // --- Render ---
-  function renderLine(line, prepend = false) {
+  function prependCard(line) {
     const entry = parseLine(line);
     if (!entry) { ERR('parseLine failed:', line); return; }
-
     const el = document.createElement('div');
-    el.className = 'log-entry';
-    el.innerHTML = `<span class="timestamp">${entry.ts}</span><span class="text">${escHtml(entry.text)}</span>`;
-
-    if (prepend && logEntries.firstChild) {
+    el.className = 'log-card';
+    el.innerHTML = `<div class="log-meta">${entry.ts}</div><p class="log-text">${escHtml(entry.text)}</p>`;
+    if (logEntries.firstChild) {
       logEntries.insertBefore(el, logEntries.firstChild);
       document.getElementById('log-empty')?.remove();
     } else {
@@ -166,8 +211,11 @@ const App = (() => {
 
   async function loadLog() {
     logEntries.innerHTML = '';
+    entryCountVal = 0;
+    entryCount.textContent = '';
+
     if (!GitHub.isConfigured()) {
-      logEntries.innerHTML = '<div id="log-empty">GitHub noch nicht konfiguriert.</div>';
+      logEntries.innerHTML = '<p class="empty">GitHub noch nicht konfiguriert.</p>';
       return;
     }
     showSync('Laden...', '');
@@ -175,11 +223,21 @@ const App = (() => {
       const lines = await GitHub.getLines();
       LOG('lines loaded:', lines.length);
       syncStatus.className = '';
+      entryCountVal = lines.length;
+      if (lines.length) entryCount.textContent = lines.length;
+
       if (!lines.length) {
-        logEntries.innerHTML = '<div id="log-empty">Noch keine Einträge.<br>Tippe den Knopf und sprich.</div>';
+        logEntries.innerHTML = '<p class="empty">Noch keine Einträge.<br>Tippe den Knopf und sprich.</p>';
         return;
       }
-      [...lines].reverse().forEach(l => renderLine(l));
+      [...lines].reverse().forEach(l => {
+        const entry = parseLine(l);
+        if (!entry) return;
+        const el = document.createElement('div');
+        el.className = 'log-card';
+        el.innerHTML = `<div class="log-meta">${entry.ts}</div><p class="log-text">${escHtml(entry.text)}</p>`;
+        logEntries.appendChild(el);
+      });
     } catch (err) {
       ERR('loadLog error:', err);
       showSync('Ladefehler: ' + err.message, 'error');
@@ -207,22 +265,19 @@ const App = (() => {
   });
 
   btnStart.addEventListener('click', async () => {
-    LOG('btnStart clicked', { user: inUser.value, repo: inRepo.value, hasToken: !!inToken.value, hasOpenAI: !!inOpenAI.value });
+    LOG('btnStart clicked');
+    if (!inOpenAI.value.trim()) { setupErr.textContent = 'OpenAI Key fehlt.'; return; }
+    if (!inUser.value.trim() || !inRepo.value.trim() || !inToken.value.trim()) {
+      setupErr.textContent = 'Alle GitHub-Felder ausfüllen.'; return;
+    }
     GitHub.save(inUser.value, inRepo.value, inToken.value);
     Whisper.saveKey(inOpenAI.value);
-    showScreen('screen-main');
+    LOG('settings saved');
+    hideOverlay();
     await loadLog();
   });
 
-  btnToSetup.addEventListener('click', () => {
-    LOG('back to setup');
-    const c = GitHub.config();
-    inUser.value   = c.user  || '';
-    inRepo.value   = c.repo  || '';
-    inToken.value  = c.token || '';
-    inOpenAI.value = Whisper.getKey();
-    showScreen('screen-setup');
-  });
+  btnOpenSettings.addEventListener('click', showOverlay);
 
   // --- Init ---
   async function init() {
@@ -241,19 +296,13 @@ const App = (() => {
     }
 
     const configured = Whisper.isConfigured() && GitHub.isConfigured();
-    LOG('fully configured?', configured);
+    LOG('configured?', configured);
 
     if (configured) {
-      showScreen('screen-main');
+      hideOverlay();
       await loadLog();
     } else {
-      // Pre-fill whatever is already saved
-      const c = GitHub.config();
-      inUser.value   = c.user  || '';
-      inRepo.value   = c.repo  || '';
-      inToken.value  = c.token || '';
-      inOpenAI.value = Whisper.getKey();
-      showScreen('screen-setup');
+      showOverlay();
     }
 
     LOG('=== init complete ===');
