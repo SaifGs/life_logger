@@ -1,6 +1,9 @@
 // Main App
 const App = (() => {
 
+  const LOG = (...args) => console.log('[App]', ...args);
+  const ERR = (...args) => console.error('[App]', ...args);
+
   // --- DOM ---
   const btnRecord       = document.getElementById('btn-record');
   const recordStatus    = document.getElementById('record-status');
@@ -15,6 +18,11 @@ const App = (() => {
   const inRepo          = document.getElementById('gh-repo');
   const inToken         = document.getElementById('gh-token');
   const inOpenAI        = document.getElementById('openai-key');
+
+  LOG('DOM elements resolved', {
+    btnRecord, recordStatus, liveTranscript, logEntries,
+    btnSettings, modalSettings, inUser, inRepo, inToken, inOpenAI
+  });
 
   let mediaRecorder = null;
   let audioChunks   = [];
@@ -39,24 +47,34 @@ const App = (() => {
 
   // --- Recording ---
   async function startRecording() {
+    LOG('startRecording called');
+    LOG('Whisper configured?', Whisper.isConfigured());
+    LOG('GitHub configured?', GitHub.isConfigured());
+
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
+      LOG('Microphone stream acquired', stream);
+    } catch (e) {
+      ERR('getUserMedia failed', e);
       showSync('Mikrofon-Zugriff verweigert', 'error');
       return;
     }
 
     audioChunks  = [];
     mediaRecorder = new MediaRecorder(stream);
+    LOG('MediaRecorder created, mimeType:', mediaRecorder.mimeType);
 
     mediaRecorder.ondataavailable = e => {
+      LOG('ondataavailable, chunk size:', e.data.size);
       if (e.data.size > 0) audioChunks.push(e.data);
     };
 
     mediaRecorder.onstop = async () => {
+      LOG('MediaRecorder stopped, chunks:', audioChunks.length);
       stream.getTracks().forEach(t => t.stop());
       const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+      LOG('Audio blob created, size:', blob.size, 'type:', blob.type);
       await processAudio(blob);
     };
 
@@ -65,9 +83,11 @@ const App = (() => {
     recordStatus.textContent = 'Aufnahme läuft...';
     liveTranscript.textContent = '';
     mediaRecorder.start();
+    LOG('MediaRecorder started');
   }
 
   function stopRecording() {
+    LOG('stopRecording called, state:', mediaRecorder?.state);
     if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
     isRecording = false;
     btnRecord.classList.remove('recording');
@@ -77,18 +97,24 @@ const App = (() => {
   }
 
   async function processAudio(blob) {
+    LOG('processAudio called, blob size:', blob.size);
     if (!Whisper.isConfigured()) {
+      ERR('Whisper not configured — openai_key missing in localStorage');
       showSync('OpenAI Key fehlt — bitte in ⚙ eintragen', 'error');
       recordStatus.textContent = 'Tippen zum Aufnehmen';
       btnRecord.disabled = false;
       return;
     }
     try {
+      LOG('Sending audio to Whisper API...');
       showSync('Whisper...', '');
       const text = await Whisper.transcribe(blob);
+      LOG('Whisper response:', text);
       liveTranscript.textContent = '';
       if (text) await saveEntry(text);
+      else LOG('Whisper returned empty text');
     } catch (err) {
+      ERR('Whisper error:', err);
       showSync('Fehler: ' + err.message, 'error');
     } finally {
       recordStatus.textContent = 'Tippen zum Aufnehmen';
@@ -98,17 +124,23 @@ const App = (() => {
 
   // --- Save ---
   async function saveEntry(text) {
+    LOG('saveEntry:', text);
     const line = formatLine(text);
+    LOG('formatted line:', line);
     renderLine(line, true);
     if (!GitHub.isConfigured()) {
+      ERR('GitHub not configured');
       showSync('GitHub nicht konfiguriert', 'error');
       return;
     }
     showSync('Sync...', '');
     try {
+      LOG('Appending to GitHub...');
       await GitHub.appendLine(line);
+      LOG('GitHub sync OK');
       showSync('✓ gespeichert', 'ok');
     } catch (err) {
+      ERR('GitHub sync error:', err);
       showSync('Sync-Fehler: ' + err.message, 'error');
     }
   }
@@ -116,7 +148,10 @@ const App = (() => {
   // --- Render ---
   function renderLine(line, prepend = false) {
     const entry = parseLine(line);
-    if (!entry) return;
+    if (!entry) {
+      ERR('parseLine failed for:', line);
+      return;
+    }
 
     const el = document.createElement('div');
     el.className = 'log-entry';
@@ -132,14 +167,18 @@ const App = (() => {
   }
 
   async function renderAll() {
+    LOG('renderAll called');
     logEntries.innerHTML = '';
     if (!GitHub.isConfigured()) {
+      LOG('GitHub not configured — showing setup message');
       logEntries.innerHTML = '<div id="log-empty">⚙ GitHub konfigurieren um Einträge zu laden.</div>';
       return;
     }
     showSync('Laden...', '');
     try {
+      LOG('Fetching lines from GitHub...');
       const lines = await GitHub.getLines();
+      LOG('Lines loaded:', lines.length);
       syncStatus.className = '';
       if (!lines.length) {
         logEntries.innerHTML = '<div id="log-empty">Noch keine Einträge.<br>Tippe den Knopf und sprich.</div>';
@@ -147,6 +186,7 @@ const App = (() => {
       }
       [...lines].reverse().forEach(l => renderLine(l));
     } catch (err) {
+      ERR('renderAll error:', err);
       showSync('Ladefehler: ' + err.message, 'error');
     }
   }
@@ -162,6 +202,7 @@ const App = (() => {
   // --- Settings ---
   function openSettings() {
     const c = GitHub.config();
+    LOG('openSettings, current config:', { user: c.user, repo: c.repo, hasToken: !!c.token, hasOpenAI: !!Whisper.getKey() });
     inUser.value   = c.user  || '';
     inRepo.value   = c.repo  || '';
     inToken.value  = c.token || '';
@@ -170,12 +211,15 @@ const App = (() => {
   }
 
   function closeSettings() {
+    LOG('closeSettings');
     modalSettings.classList.add('hidden');
   }
 
   async function saveSettings() {
+    LOG('saveSettings', { user: inUser.value, repo: inRepo.value, hasToken: !!inToken.value, hasOpenAI: !!inOpenAI.value });
     GitHub.save(inUser.value, inRepo.value, inToken.value);
     Whisper.saveKey(inOpenAI.value);
+    LOG('Settings saved to localStorage');
     showSync('Einstellungen gespeichert', 'ok');
     closeSettings();
     await renderAll();
@@ -188,6 +232,7 @@ const App = (() => {
 
   // --- Events ---
   btnRecord.addEventListener('click', () => {
+    LOG('Record button clicked, isRecording:', isRecording);
     if (isRecording) stopRecording();
     else startRecording();
   });
@@ -202,10 +247,23 @@ const App = (() => {
 
   // --- Init ---
   async function init() {
+    LOG('=== Life Logger init ===');
+    LOG('localStorage state:', {
+      gh_user:    localStorage.getItem('gh_user'),
+      gh_repo:    localStorage.getItem('gh_repo'),
+      has_token:  !!localStorage.getItem('gh_token'),
+      has_openai: !!localStorage.getItem('openai_key'),
+    });
+    LOG('GitHub configured?', GitHub.isConfigured());
+    LOG('Whisper configured?', Whisper.isConfigured());
+
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js')
+        .then(r => LOG('Service Worker registered', r.scope))
+        .catch(e => ERR('Service Worker failed', e));
     }
     await renderAll();
+    LOG('=== init complete ===');
   }
 
   init();
