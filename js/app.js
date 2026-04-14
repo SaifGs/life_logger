@@ -22,6 +22,7 @@ const App = (() => {
   const syncStatus      = document.getElementById('sync-status');
   const textInput       = document.getElementById('text-input');
   const btnTextSubmit   = document.getElementById('btn-text-submit');
+  const btnClear        = document.getElementById('btn-clear');
 
   // --- State ---
   let allLines      = [];   // in-memory copy of life_log.log (chronological)
@@ -368,6 +369,11 @@ const App = (() => {
   });
 
   btnOpenSettings.addEventListener('click', showOverlay);
+
+  btnClear.addEventListener('click', () => {
+    logEntries.innerHTML = '';
+    entryCount.textContent = '';
+  });
 
   // --- Init ---
   async function init() {
