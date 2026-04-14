@@ -127,6 +127,29 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
 }
 .transcript:empty { display: none; }
 
+/* ── Text Input Row ────────────────────────── */
+.text-row {
+  display: flex; align-items: center; gap: .5rem;
+  width: 100%; max-width: 420px;
+}
+.text-row input {
+  flex: 1; background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 14px;
+  font-size: .88rem; font-family: "Inter", sans-serif;
+  color: var(--text); outline: none;
+  transition: border-color .2s;
+}
+.text-row input:focus { border-color: var(--accent); }
+.text-row input::placeholder { color: var(--muted); }
+#btn-text-submit {
+  flex-shrink: 0; width: 38px; height: 38px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; color: var(--muted);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: color .2s, border-color .2s;
+}
+#btn-text-submit:hover { color: var(--accent); border-color: var(--accent); }
+
 /* ── Log Section ───────────────────────────── */
 .log-section {
   flex: 1; overflow: hidden;
@@ -168,14 +191,62 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
 }
 .log-card:hover { border-color: #4B5563; }
 
+/* ── Day Header ────────────────────────────── */
+.day-group { display: flex; flex-direction: column; gap: .5rem; }
+
+.day-header {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .5rem 0 .15rem;
+}
+.day-header::before,
+.day-header::after {
+  content: ''; flex: 1;
+  height: 1px; background: var(--border);
+}
+.day-header span {
+  font-size: .68rem; color: var(--muted);
+  font-weight: 600; letter-spacing: .06em;
+  white-space: nowrap; flex-shrink: 0;
+}
+
+/* ── Card meta + actions ───────────────────── */
 .log-meta {
+  display: flex; align-items: center;
+  justify-content: space-between;
   font-size: .7rem; color: var(--muted);
   margin-bottom: .38rem;
 }
 
+.card-actions { display: flex; gap: .35rem; }
+
+.btn-edit, .btn-del, .btn-save-edit, .btn-cancel-edit {
+  border: none; border-radius: 6px;
+  padding: 3px 10px; font-size: .7rem;
+  font-family: "Inter", sans-serif; cursor: pointer;
+  transition: background .15s;
+}
+.btn-edit       { background: rgba(124,58,237,.15); color: var(--purple); }
+.btn-edit:hover { background: rgba(124,58,237,.28); }
+.btn-del        { background: rgba(239,68,68,.1);   color: #FCA5A5; }
+.btn-del:hover  { background: rgba(239,68,68,.22); }
+.btn-save-edit       { background: rgba(63,185,80,.15); color: var(--green); }
+.btn-save-edit:hover { background: rgba(63,185,80,.28); }
+.btn-cancel-edit       { background: rgba(139,148,158,.1); color: var(--muted); }
+.btn-cancel-edit:hover { background: rgba(139,148,158,.2); }
+
 .log-text {
   font-size: .87rem; line-height: 1.6;
   color: var(--text); word-break: break-word;
+}
+
+.edit-textarea {
+  width: 100%; background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px; padding: 8px 10px;
+  font-size: .87rem; font-family: "Inter", sans-serif;
+  color: var(--text); outline: none;
+  resize: vertical; min-height: 60px;
+  line-height: 1.6;
 }
 
 @keyframes fadein { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }

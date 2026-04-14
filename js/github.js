@@ -67,5 +67,30 @@ const GitHub = (() => {
     if (!res.ok) throw new Error(`GitHub ${res.status}`);
   }
 
-  return { isConfigured, save, config, getLines, appendLine };
+  async function writeLines(lines) {
+    if (!isConfigured()) return;
+    const { user, repo, token } = config();
+    const { sha } = await getFile();
+    const newContent = lines.join('\n');
+    const body = {
+      message: `log: update ${new Date().toISOString().slice(0, 10)}`,
+      content: btoa(new TextEncoder().encode(newContent).reduce((s, b) => s + String.fromCharCode(b), '')),
+    };
+    if (sha) body.sha = sha;
+    const res = await fetch(
+      `https://api.github.com/repos/${user}/${repo}/contents/${FILE_PATH}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) throw new Error(`GitHub ${res.status}`);
+  }
+
+  return { isConfigured, save, config, getLines, appendLine, writeLines };
 })();
