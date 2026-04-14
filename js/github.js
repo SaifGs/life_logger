@@ -1,6 +1,7 @@
 // GitHub Contents API — schreibt in privates Repo
 const GitHub = (() => {
   const FILE_PATH = 'life_log.log';
+  let writeQueue = Promise.resolve(); // serializes all writes to avoid 409 conflicts
 
   function config() {
     return {
@@ -42,14 +43,11 @@ const GitHub = (() => {
     return content.split('\n').filter(l => l.trim());
   }
 
-  async function appendLine(line) {
-    if (!isConfigured()) return;
+  async function putFile(content, sha, commitMsg) {
     const { user, repo, token } = config();
-    const { content, sha } = await getFile();
-    const newContent = content ? content + '\n' + line : line;
     const body = {
-      message: `log: ${new Date().toISOString().slice(0, 10)}`,
-      content: btoa(new TextEncoder().encode(newContent).reduce((s, b) => s + String.fromCharCode(b), '')),
+      message: commitMsg,
+      content: btoa(new TextEncoder().encode(content).reduce((s, b) => s + String.fromCharCode(b), '')),
     };
     if (sha) body.sha = sha;
     const res = await fetch(
@@ -67,29 +65,26 @@ const GitHub = (() => {
     if (!res.ok) throw new Error(`GitHub ${res.status}`);
   }
 
-  async function writeLines(lines) {
-    if (!isConfigured()) return;
-    const { user, repo, token } = config();
-    const { sha } = await getFile();
-    const newContent = lines.join('\n');
-    const body = {
-      message: `log: update ${new Date().toISOString().slice(0, 10)}`,
-      content: btoa(new TextEncoder().encode(newContent).reduce((s, b) => s + String.fromCharCode(b), '')),
-    };
-    if (sha) body.sha = sha;
-    const res = await fetch(
-      `https://api.github.com/repos/${user}/${repo}/contents/${FILE_PATH}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      }
-    );
-    if (!res.ok) throw new Error(`GitHub ${res.status}`);
+  function enqueue(task) {
+    writeQueue = writeQueue.then(task, task); // chain even if previous failed
+    return writeQueue;
+  }
+
+  function appendLine(line) {
+    if (!isConfigured()) return Promise.resolve();
+    return enqueue(async () => {
+      const { content, sha } = await getFile();
+      const newContent = content ? content + '\n' + line : line;
+      await putFile(newContent, sha, `log: ${new Date().toISOString().slice(0, 10)}`);
+    });
+  }
+
+  function writeLines(lines) {
+    if (!isConfigured()) return Promise.resolve();
+    return enqueue(async () => {
+      const { sha } = await getFile();
+      await putFile(lines.join('\n'), sha, `log: update ${new Date().toISOString().slice(0, 10)}`);
+    });
   }
 
   return { isConfigured, save, config, getLines, appendLine, writeLines };
