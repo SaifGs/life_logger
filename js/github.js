@@ -1,6 +1,6 @@
 // GitHub Contents API — schreibt in privates Repo
 const GitHub = (() => {
-  const FILE_PATH = 'life.log';
+  const FILE_PATH = 'life_log.log';
 
   function config() {
     return {
@@ -12,7 +12,7 @@ const GitHub = (() => {
 
   function isConfigured() {
     const c = config();
-    return c.user && c.repo && c.token;
+    return !!(c.user && c.repo && c.token);
   }
 
   function save(user, repo, token) {
@@ -36,14 +36,20 @@ const GitHub = (() => {
     };
   }
 
+  async function getLines() {
+    const { content } = await getFile();
+    if (!content) return [];
+    return content.split('\n').filter(l => l.trim());
+  }
+
   async function appendLine(line) {
     if (!isConfigured()) return;
     const { user, repo, token } = config();
     const { content, sha } = await getFile();
     const newContent = content ? content + '\n' + line : line;
     const body = {
-      message: `log: ${new Date().toISOString().slice(0,10)}`,
-      content: btoa(unescape(encodeURIComponent(newContent))),
+      message: `log: ${new Date().toISOString().slice(0, 10)}`,
+      content: btoa(new TextEncoder().encode(newContent).reduce((s, b) => s + String.fromCharCode(b), '')),
     };
     if (sha) body.sha = sha;
     const res = await fetch(
@@ -61,5 +67,5 @@ const GitHub = (() => {
     if (!res.ok) throw new Error(`GitHub ${res.status}`);
   }
 
-  return { isConfigured, save, config, appendLine };
+  return { isConfigured, save, config, getLines, appendLine };
 })();

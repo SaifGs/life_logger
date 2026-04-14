@@ -11,7 +11,6 @@ const App = (() => {
   const modalSettings   = document.getElementById('modal-settings');
   const btnSaveSettings = document.getElementById('btn-save-settings');
   const btnCloseSettings= document.getElementById('btn-close-settings');
-  const btnExport       = document.getElementById('btn-export');
   const inUser          = document.getElementById('gh-user');
   const inRepo          = document.getElementById('gh-repo');
   const inToken         = document.getElementById('gh-token');
@@ -21,6 +20,22 @@ const App = (() => {
   let audioChunks   = [];
   let isRecording   = false;
   let syncTimer     = null;
+
+  // --- Log Format (Python-Logger-Stil) ---
+  // 2026-04-14 10:23:45 - text
+  function formatLine(text) {
+    const d   = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${date} ${time} - ${text}`;
+  }
+
+  function parseLine(line) {
+    const m = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - (.+)$/);
+    if (!m) return null;
+    return { ts: m[1], text: m[2] };
+  }
 
   // --- Recording ---
   async function startRecording() {
@@ -81,16 +96,14 @@ const App = (() => {
     }
   }
 
-  // --- Save & Sync ---
+  // --- Save ---
   async function saveEntry(text) {
-    const entry = await DB.add(text);
-    renderEntry(entry, true);
-    syncToGitHub(entry);
-  }
-
-  async function syncToGitHub(entry) {
-    if (!GitHub.isConfigured()) return;
-    const line = DB.formatLine(entry);
+    const line = formatLine(text);
+    renderLine(line, true);
+    if (!GitHub.isConfigured()) {
+      showSync('GitHub nicht konfiguriert', 'error');
+      return;
+    }
     showSync('Sync...', '');
     try {
       await GitHub.appendLine(line);
@@ -101,14 +114,13 @@ const App = (() => {
   }
 
   // --- Render ---
-  function renderEntry(entry, prepend = false) {
-    const d   = new Date(entry.ts);
-    const pad = n => String(n).padStart(2, '0');
-    const ts  = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  function renderLine(line, prepend = false) {
+    const entry = parseLine(line);
+    if (!entry) return;
 
     const el = document.createElement('div');
     el.className = 'log-entry';
-    el.innerHTML = `<span class="timestamp">${ts}</span><span class="text">${escHtml(entry.text)}</span>`;
+    el.innerHTML = `<span class="timestamp">${entry.ts}</span><span class="text">${escHtml(entry.text)}</span>`;
 
     if (prepend && logEntries.firstChild) {
       logEntries.insertBefore(el, logEntries.firstChild);
@@ -121,12 +133,22 @@ const App = (() => {
 
   async function renderAll() {
     logEntries.innerHTML = '';
-    const entries = await DB.getAll();
-    if (!entries.length) {
-      logEntries.innerHTML = '<div id="log-empty">Noch keine Einträge.<br>Tippe den Knopf und sprich.</div>';
+    if (!GitHub.isConfigured()) {
+      logEntries.innerHTML = '<div id="log-empty">⚙ GitHub konfigurieren um Einträge zu laden.</div>';
       return;
     }
-    [...entries].reverse().forEach(e => renderEntry(e));
+    showSync('Laden...', '');
+    try {
+      const lines = await GitHub.getLines();
+      syncStatus.className = '';
+      if (!lines.length) {
+        logEntries.innerHTML = '<div id="log-empty">Noch keine Einträge.<br>Tippe den Knopf und sprich.</div>';
+        return;
+      }
+      [...lines].reverse().forEach(l => renderLine(l));
+    } catch (err) {
+      showSync('Ladefehler: ' + err.message, 'error');
+    }
   }
 
   // --- Sync Status Toast ---
@@ -151,22 +173,12 @@ const App = (() => {
     modalSettings.classList.add('hidden');
   }
 
-  function saveSettings() {
+  async function saveSettings() {
     GitHub.save(inUser.value, inRepo.value, inToken.value);
     Whisper.saveKey(inOpenAI.value);
     showSync('Einstellungen gespeichert', 'ok');
     closeSettings();
-  }
-
-  async function exportLog() {
-    const log  = await DB.exportLog();
-    const blob = new Blob([log], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = 'life.log';
-    a.click();
-    URL.revokeObjectURL(url);
+    await renderAll();
   }
 
   // --- Helpers ---
@@ -183,7 +195,6 @@ const App = (() => {
   btnSettings.addEventListener('click', openSettings);
   btnCloseSettings.addEventListener('click', closeSettings);
   btnSaveSettings.addEventListener('click', saveSettings);
-  btnExport.addEventListener('click', exportLog);
 
   modalSettings.addEventListener('click', e => {
     if (e.target === modalSettings) closeSettings();
@@ -195,12 +206,6 @@ const App = (() => {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
     await renderAll();
-
-    if (!Whisper.isConfigured()) {
-      showSync('⚙ OpenAI Key noch nicht konfiguriert', '');
-    } else if (!GitHub.isConfigured()) {
-      showSync('⚙ GitHub noch nicht konfiguriert', '');
-    }
   }
 
   init();
