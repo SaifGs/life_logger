@@ -1,10 +1,11 @@
 {
-  "name": "Life Logger",
+  "name": "life.log",
   "short_name": "life.log",
-  "description": "Dein persönliches Lebens-Log",
-  "start_url": "/life-logger/",
+  "description": "Voice Journal",
+  "start_url": "/life_logger/",
+  "scope": "/life_logger/",
   "display": "standalone",
-  "background_color": "#0f0f0f",
-  "theme_color": "#0f0f0f",
+  "background_color": "#0D1117",
+  "theme_color": "#0D1117",
   "icons": []
 }
