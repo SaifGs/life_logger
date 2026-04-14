@@ -3,21 +3,42 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#0f0f0f" />
-  <title>Life Logger</title>
+  <meta name="theme-color" content="#0a0a0a" />
+  <title>life.log</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-  <div id="app">
 
-    <!-- Header -->
-    <header>
+  <!-- Setup Screen -->
+  <div id="screen-setup" class="screen hidden">
+    <div class="setup-inner">
       <h1>life.log</h1>
-      <button id="btn-settings" title="Einstellungen">⚙</button>
+      <p class="tagline">Sprich. Alles wird gespeichert.</p>
+
+      <div class="setup-group">
+        <span class="group-label">OpenAI</span>
+        <input type="password" id="openai-key" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="setup-group">
+        <span class="group-label">GitHub</span>
+        <input type="text"     id="gh-user"  placeholder="username"          autocomplete="off" spellcheck="false" />
+        <input type="text"     id="gh-repo"  placeholder="repo-name (privat)" autocomplete="off" spellcheck="false" />
+        <input type="password" id="gh-token" placeholder="ghp_..."            autocomplete="off" spellcheck="false" />
+      </div>
+
+      <button id="btn-start">Loslegen</button>
+    </div>
+  </div>
+
+  <!-- Main Screen -->
+  <div id="screen-main" class="screen hidden">
+
+    <header>
+      <span class="logo" id="btn-to-setup" title="Einstellungen">life.log</span>
     </header>
 
-    <!-- Record Section -->
     <section id="record-section">
       <button id="btn-record" aria-label="Aufnahme starten">
         <span class="mic-icon">🎙</span>
@@ -27,37 +48,11 @@
       <div id="live-transcript"></div>
     </section>
 
-    <!-- Log Section -->
     <section id="log-section">
       <div id="log-entries"></div>
     </section>
 
-    <!-- Sync Status -->
     <div id="sync-status"></div>
-
-  </div>
-
-  <!-- Settings Modal -->
-  <div id="modal-settings" class="modal hidden">
-    <div class="modal-box">
-      <h2>Einstellungen</h2>
-      <label>GitHub Username
-        <input type="text" id="gh-user" placeholder="dein-username" />
-      </label>
-      <label>Private Repo Name
-        <input type="text" id="gh-repo" placeholder="my-history" />
-      </label>
-      <label>Personal Access Token
-        <input type="password" id="gh-token" placeholder="ghp_..." />
-      </label>
-      <label>OpenAI API Key
-        <input type="password" id="openai-key" placeholder="sk-..." />
-      </label>
-      <div class="modal-actions">
-        <button id="btn-save-settings">Speichern</button>
-        <button id="btn-close-settings" class="secondary">Abbrechen</button>
-      </div>
-    </div>
   </div>
 
   <script src="js/github.js"></script>

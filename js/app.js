@@ -5,32 +5,35 @@ const App = (() => {
   const ERR = (...args) => console.error('[App]', ...args);
 
   // --- DOM ---
-  const btnRecord       = document.getElementById('btn-record');
-  const recordStatus    = document.getElementById('record-status');
-  const liveTranscript  = document.getElementById('live-transcript');
-  const logEntries      = document.getElementById('log-entries');
-  const syncStatus      = document.getElementById('sync-status');
-  const btnSettings     = document.getElementById('btn-settings');
-  const modalSettings   = document.getElementById('modal-settings');
-  const btnSaveSettings = document.getElementById('btn-save-settings');
-  const btnCloseSettings= document.getElementById('btn-close-settings');
-  const inUser          = document.getElementById('gh-user');
-  const inRepo          = document.getElementById('gh-repo');
-  const inToken         = document.getElementById('gh-token');
-  const inOpenAI        = document.getElementById('openai-key');
+  const screenSetup    = document.getElementById('screen-setup');
+  const screenMain     = document.getElementById('screen-main');
+  const btnStart       = document.getElementById('btn-start');
+  const btnToSetup     = document.getElementById('btn-to-setup');
+  const inOpenAI       = document.getElementById('openai-key');
+  const inUser         = document.getElementById('gh-user');
+  const inRepo         = document.getElementById('gh-repo');
+  const inToken        = document.getElementById('gh-token');
+  const btnRecord      = document.getElementById('btn-record');
+  const recordStatus   = document.getElementById('record-status');
+  const liveTranscript = document.getElementById('live-transcript');
+  const logEntries     = document.getElementById('log-entries');
+  const syncStatus     = document.getElementById('sync-status');
 
-  LOG('DOM elements resolved', {
-    btnRecord, recordStatus, liveTranscript, logEntries,
-    btnSettings, modalSettings, inUser, inRepo, inToken, inOpenAI
-  });
+  LOG('DOM resolved');
 
   let mediaRecorder = null;
   let audioChunks   = [];
   let isRecording   = false;
   let syncTimer     = null;
 
-  // --- Log Format (Python-Logger-Stil) ---
-  // 2026-04-14 10:23:45 - text
+  // --- Screens ---
+  function showScreen(id) {
+    LOG('showScreen:', id);
+    [screenSetup, screenMain].forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  // --- Log Format (Python-Logger-Stil): 2026-04-14 10:23:45 - text ---
   function formatLine(text) {
     const d   = new Date();
     const pad = n => String(n).padStart(2, '0');
@@ -47,47 +50,44 @@ const App = (() => {
 
   // --- Recording ---
   async function startRecording() {
-    LOG('startRecording called');
-    LOG('Whisper configured?', Whisper.isConfigured());
-    LOG('GitHub configured?', GitHub.isConfigured());
+    LOG('startRecording');
+    liveTranscript.textContent = '';
+    liveTranscript.classList.remove('has-text');
 
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      LOG('Microphone stream acquired', stream);
+      LOG('mic acquired');
     } catch (e) {
       ERR('getUserMedia failed', e);
       showSync('Mikrofon-Zugriff verweigert', 'error');
       return;
     }
 
-    audioChunks  = [];
+    audioChunks   = [];
     mediaRecorder = new MediaRecorder(stream);
-    LOG('MediaRecorder created, mimeType:', mediaRecorder.mimeType);
+    LOG('MediaRecorder mimeType:', mediaRecorder.mimeType);
 
     mediaRecorder.ondataavailable = e => {
-      LOG('ondataavailable, chunk size:', e.data.size);
       if (e.data.size > 0) audioChunks.push(e.data);
+      LOG('chunk:', e.data.size);
     };
 
     mediaRecorder.onstop = async () => {
-      LOG('MediaRecorder stopped, chunks:', audioChunks.length);
       stream.getTracks().forEach(t => t.stop());
       const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
-      LOG('Audio blob created, size:', blob.size, 'type:', blob.type);
+      LOG('blob ready, size:', blob.size);
       await processAudio(blob);
     };
 
     isRecording = true;
     btnRecord.classList.add('recording');
     recordStatus.textContent = 'Aufnahme läuft...';
-    liveTranscript.textContent = '';
     mediaRecorder.start();
-    LOG('MediaRecorder started');
   }
 
   function stopRecording() {
-    LOG('stopRecording called, state:', mediaRecorder?.state);
+    LOG('stopRecording, state:', mediaRecorder?.state);
     if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
     isRecording = false;
     btnRecord.classList.remove('recording');
@@ -97,24 +97,28 @@ const App = (() => {
   }
 
   async function processAudio(blob) {
-    LOG('processAudio called, blob size:', blob.size);
+    LOG('processAudio, blob size:', blob.size);
     if (!Whisper.isConfigured()) {
-      ERR('Whisper not configured — openai_key missing in localStorage');
-      showSync('OpenAI Key fehlt — bitte in ⚙ eintragen', 'error');
+      ERR('Whisper not configured');
+      showSync('OpenAI Key fehlt', 'error');
       recordStatus.textContent = 'Tippen zum Aufnehmen';
       btnRecord.disabled = false;
       return;
     }
     try {
-      LOG('Sending audio to Whisper API...');
-      showSync('Whisper...', '');
+      showSync('Transkribiere...', '');
       const text = await Whisper.transcribe(blob);
-      LOG('Whisper response:', text);
-      liveTranscript.textContent = '';
-      if (text) await saveEntry(text);
-      else LOG('Whisper returned empty text');
+      LOG('transcript:', text);
+
+      if (text) {
+        liveTranscript.textContent = text;
+        liveTranscript.classList.add('has-text');
+        await saveEntry(text);
+      } else {
+        LOG('empty transcript');
+      }
     } catch (err) {
-      ERR('Whisper error:', err);
+      ERR('processAudio error:', err);
       showSync('Fehler: ' + err.message, 'error');
     } finally {
       recordStatus.textContent = 'Tippen zum Aufnehmen';
@@ -124,18 +128,16 @@ const App = (() => {
 
   // --- Save ---
   async function saveEntry(text) {
-    LOG('saveEntry:', text);
     const line = formatLine(text);
-    LOG('formatted line:', line);
+    LOG('saveEntry line:', line);
     renderLine(line, true);
     if (!GitHub.isConfigured()) {
       ERR('GitHub not configured');
       showSync('GitHub nicht konfiguriert', 'error');
       return;
     }
-    showSync('Sync...', '');
+    showSync('Speichern...', '');
     try {
-      LOG('Appending to GitHub...');
       await GitHub.appendLine(line);
       LOG('GitHub sync OK');
       showSync('✓ gespeichert', 'ok');
@@ -148,10 +150,7 @@ const App = (() => {
   // --- Render ---
   function renderLine(line, prepend = false) {
     const entry = parseLine(line);
-    if (!entry) {
-      ERR('parseLine failed for:', line);
-      return;
-    }
+    if (!entry) { ERR('parseLine failed:', line); return; }
 
     const el = document.createElement('div');
     el.className = 'log-entry';
@@ -159,26 +158,22 @@ const App = (() => {
 
     if (prepend && logEntries.firstChild) {
       logEntries.insertBefore(el, logEntries.firstChild);
-      const empty = document.getElementById('log-empty');
-      if (empty) empty.remove();
+      document.getElementById('log-empty')?.remove();
     } else {
       logEntries.appendChild(el);
     }
   }
 
-  async function renderAll() {
-    LOG('renderAll called');
+  async function loadLog() {
     logEntries.innerHTML = '';
     if (!GitHub.isConfigured()) {
-      LOG('GitHub not configured — showing setup message');
-      logEntries.innerHTML = '<div id="log-empty">⚙ GitHub konfigurieren um Einträge zu laden.</div>';
+      logEntries.innerHTML = '<div id="log-empty">GitHub noch nicht konfiguriert.</div>';
       return;
     }
     showSync('Laden...', '');
     try {
-      LOG('Fetching lines from GitHub...');
       const lines = await GitHub.getLines();
-      LOG('Lines loaded:', lines.length);
+      LOG('lines loaded:', lines.length);
       syncStatus.className = '';
       if (!lines.length) {
         logEntries.innerHTML = '<div id="log-empty">Noch keine Einträge.<br>Tippe den Knopf und sprich.</div>';
@@ -186,43 +181,17 @@ const App = (() => {
       }
       [...lines].reverse().forEach(l => renderLine(l));
     } catch (err) {
-      ERR('renderAll error:', err);
+      ERR('loadLog error:', err);
       showSync('Ladefehler: ' + err.message, 'error');
     }
   }
 
-  // --- Sync Status Toast ---
+  // --- Sync Toast ---
   function showSync(msg, type) {
     clearTimeout(syncTimer);
     syncStatus.textContent = msg;
     syncStatus.className = `visible ${type}`;
     syncTimer = setTimeout(() => { syncStatus.className = ''; }, 3000);
-  }
-
-  // --- Settings ---
-  function openSettings() {
-    const c = GitHub.config();
-    LOG('openSettings, current config:', { user: c.user, repo: c.repo, hasToken: !!c.token, hasOpenAI: !!Whisper.getKey() });
-    inUser.value   = c.user  || '';
-    inRepo.value   = c.repo  || '';
-    inToken.value  = c.token || '';
-    inOpenAI.value = Whisper.getKey();
-    modalSettings.classList.remove('hidden');
-  }
-
-  function closeSettings() {
-    LOG('closeSettings');
-    modalSettings.classList.add('hidden');
-  }
-
-  async function saveSettings() {
-    LOG('saveSettings', { user: inUser.value, repo: inRepo.value, hasToken: !!inToken.value, hasOpenAI: !!inOpenAI.value });
-    GitHub.save(inUser.value, inRepo.value, inToken.value);
-    Whisper.saveKey(inOpenAI.value);
-    LOG('Settings saved to localStorage');
-    showSync('Einstellungen gespeichert', 'ok');
-    closeSettings();
-    await renderAll();
   }
 
   // --- Helpers ---
@@ -232,37 +201,61 @@ const App = (() => {
 
   // --- Events ---
   btnRecord.addEventListener('click', () => {
-    LOG('Record button clicked, isRecording:', isRecording);
+    LOG('record click, isRecording:', isRecording);
     if (isRecording) stopRecording();
     else startRecording();
   });
 
-  btnSettings.addEventListener('click', openSettings);
-  btnCloseSettings.addEventListener('click', closeSettings);
-  btnSaveSettings.addEventListener('click', saveSettings);
+  btnStart.addEventListener('click', async () => {
+    LOG('btnStart clicked', { user: inUser.value, repo: inRepo.value, hasToken: !!inToken.value, hasOpenAI: !!inOpenAI.value });
+    GitHub.save(inUser.value, inRepo.value, inToken.value);
+    Whisper.saveKey(inOpenAI.value);
+    showScreen('screen-main');
+    await loadLog();
+  });
 
-  modalSettings.addEventListener('click', e => {
-    if (e.target === modalSettings) closeSettings();
+  btnToSetup.addEventListener('click', () => {
+    LOG('back to setup');
+    const c = GitHub.config();
+    inUser.value   = c.user  || '';
+    inRepo.value   = c.repo  || '';
+    inToken.value  = c.token || '';
+    inOpenAI.value = Whisper.getKey();
+    showScreen('screen-setup');
   });
 
   // --- Init ---
   async function init() {
-    LOG('=== Life Logger init ===');
-    LOG('localStorage state:', {
+    LOG('=== init ===');
+    LOG('localStorage:', {
       gh_user:    localStorage.getItem('gh_user'),
       gh_repo:    localStorage.getItem('gh_repo'),
       has_token:  !!localStorage.getItem('gh_token'),
       has_openai: !!localStorage.getItem('openai_key'),
     });
-    LOG('GitHub configured?', GitHub.isConfigured());
-    LOG('Whisper configured?', Whisper.isConfigured());
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js')
-        .then(r => LOG('Service Worker registered', r.scope))
-        .catch(e => ERR('Service Worker failed', e));
+        .then(r => LOG('SW registered', r.scope))
+        .catch(e => ERR('SW failed', e));
     }
-    await renderAll();
+
+    const configured = Whisper.isConfigured() && GitHub.isConfigured();
+    LOG('fully configured?', configured);
+
+    if (configured) {
+      showScreen('screen-main');
+      await loadLog();
+    } else {
+      // Pre-fill whatever is already saved
+      const c = GitHub.config();
+      inUser.value   = c.user  || '';
+      inRepo.value   = c.repo  || '';
+      inToken.value  = c.token || '';
+      inOpenAI.value = Whisper.getKey();
+      showScreen('screen-setup');
+    }
+
     LOG('=== init complete ===');
   }
 
