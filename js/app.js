@@ -15,69 +15,70 @@ const App = (() => {
   const inUser          = document.getElementById('gh-user');
   const inRepo          = document.getElementById('gh-repo');
   const inToken         = document.getElementById('gh-token');
+  const inOpenAI        = document.getElementById('openai-key');
 
-  let recognition = null;
-  let isRecording = false;
-  let finalText   = '';
-  let syncTimer   = null;
+  let mediaRecorder = null;
+  let audioChunks   = [];
+  let isRecording   = false;
+  let syncTimer     = null;
 
-  // --- Speech Recognition ---
-  function initSpeech() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      recordStatus.textContent = 'Sprache nicht unterstützt — Chrome/Edge empfohlen';
-      btnRecord.disabled = true;
+  // --- Recording ---
+  async function startRecording() {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      showSync('Mikrofon-Zugriff verweigert', 'error');
       return;
     }
-    recognition = new SR();
-    recognition.lang = 'de-DE';
-    recognition.continuous = true;
-    recognition.interimResults = true;
 
-    recognition.onresult = e => {
-      let interim = '';
-      finalText = '';
-      for (const r of e.results) {
-        if (r.isFinal) finalText += r[0].transcript + ' ';
-        else interim += r[0].transcript;
-      }
-      liveTranscript.textContent = finalText + interim;
+    audioChunks  = [];
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size > 0) audioChunks.push(e.data);
     };
 
-    recognition.onerror = e => {
-      if (e.error === 'no-speech') return;
-      showSync('Mikrofon-Fehler: ' + e.error, 'error');
-      stopRecording();
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+      await processAudio(blob);
     };
 
-    recognition.onend = () => {
-      if (isRecording) recognition.start(); // re-start on pause
-    };
-  }
-
-  function startRecording() {
-    if (!recognition) return;
     isRecording = true;
-    finalText   = '';
-    liveTranscript.textContent = '';
     btnRecord.classList.add('recording');
     recordStatus.textContent = 'Aufnahme läuft...';
-    recognition.start();
+    liveTranscript.textContent = '';
+    mediaRecorder.start();
   }
 
-  async function stopRecording() {
-    if (!recognition) return;
+  function stopRecording() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
     isRecording = false;
     btnRecord.classList.remove('recording');
-    recordStatus.textContent = 'Tippen zum Aufnehmen';
-    recognition.onend = null;
-    recognition.stop();
+    recordStatus.textContent = 'Verarbeitung...';
+    btnRecord.disabled = true;
+    mediaRecorder.stop();
+  }
 
-    const text = finalText.trim() || liveTranscript.textContent.trim();
-    liveTranscript.textContent = '';
-
-    if (!text) return;
-    await saveEntry(text);
+  async function processAudio(blob) {
+    if (!Whisper.isConfigured()) {
+      showSync('OpenAI Key fehlt — bitte in ⚙ eintragen', 'error');
+      recordStatus.textContent = 'Tippen zum Aufnehmen';
+      btnRecord.disabled = false;
+      return;
+    }
+    try {
+      showSync('Whisper...', '');
+      const text = await Whisper.transcribe(blob);
+      liveTranscript.textContent = '';
+      if (text) await saveEntry(text);
+    } catch (err) {
+      showSync('Fehler: ' + err.message, 'error');
+    } finally {
+      recordStatus.textContent = 'Tippen zum Aufnehmen';
+      btnRecord.disabled = false;
+    }
   }
 
   // --- Save & Sync ---
@@ -111,7 +112,6 @@ const App = (() => {
 
     if (prepend && logEntries.firstChild) {
       logEntries.insertBefore(el, logEntries.firstChild);
-      // remove empty state
       const empty = document.getElementById('log-empty');
       if (empty) empty.remove();
     } else {
@@ -126,7 +126,6 @@ const App = (() => {
       logEntries.innerHTML = '<div id="log-empty">Noch keine Einträge.<br>Tippe den Knopf und sprich.</div>';
       return;
     }
-    // newest first
     [...entries].reverse().forEach(e => renderEntry(e));
   }
 
@@ -141,9 +140,10 @@ const App = (() => {
   // --- Settings ---
   function openSettings() {
     const c = GitHub.config();
-    inUser.value  = c.user  || '';
-    inRepo.value  = c.repo  || '';
-    inToken.value = c.token || '';
+    inUser.value   = c.user  || '';
+    inRepo.value   = c.repo  || '';
+    inToken.value  = c.token || '';
+    inOpenAI.value = Whisper.getKey();
     modalSettings.classList.remove('hidden');
   }
 
@@ -153,12 +153,13 @@ const App = (() => {
 
   function saveSettings() {
     GitHub.save(inUser.value, inRepo.value, inToken.value);
+    Whisper.saveKey(inOpenAI.value);
     showSync('Einstellungen gespeichert', 'ok');
     closeSettings();
   }
 
   async function exportLog() {
-    const log = await DB.exportLog();
+    const log  = await DB.exportLog();
     const blob = new Blob([log], { type: 'text/plain' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -193,10 +194,11 @@ const App = (() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
-    initSpeech();
     await renderAll();
 
-    if (!GitHub.isConfigured()) {
+    if (!Whisper.isConfigured()) {
+      showSync('⚙ OpenAI Key noch nicht konfiguriert', '');
+    } else if (!GitHub.isConfigured()) {
       showSync('⚙ GitHub noch nicht konfiguriert', '');
     }
   }
